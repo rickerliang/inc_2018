@@ -5,12 +5,19 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from functools import partial
+import math
 import os
 
 import tensorflow as tf
 
+"""
+1.build category directory
+2.use gen_dataset_file(train_file_dir, depth) generate train/val file
+3.use get_tf_dataset(train/val_file, balance_count, parallel_call) build tensorflow input pipeline
+"""
 
-def read_labeled_image_list(dataset_text_file, balance_count=500):
+def read_labeled_image_list(dataset_text_file, balance_count):
     """Reads a .txt file containing pathes and labeles
     Args:
        image_list_file: a .txt file with one /path/to/image per line
@@ -45,12 +52,62 @@ def read_labeled_image_list(dataset_text_file, balance_count=500):
     return filenames, labels
 
 
-def get_tf_dataset(dataset_text_file, balance_count=500, parallel_calls=20):
+def get_tf_dataset(dataset_text_file, balance_count=500, parallel_calls=20, resize=512, crop_size=384):
+    def aug_1(image):
+        image = tf.image.random_brightness(image, max_delta=32. / 255.)
+        image = tf.image.random_saturation(image, lower=0.5, upper=1.5)
+        image = tf.image.random_hue(image, max_delta=0.2)
+        image = tf.image.random_contrast(image, lower=0.5, upper=1.5)
+        return image
+
+    def aug_2(image):
+        image = tf.image.random_saturation(image, lower=0.5, upper=1.5)
+        image = tf.image.random_brightness(image, max_delta=32. / 255.)
+        image = tf.image.random_contrast(image, lower=0.5, upper=1.5)
+        image = tf.image.random_hue(image, max_delta=0.2)
+        return image
+
+    def aug_3(image):
+        image = tf.image.random_contrast(image, lower=0.5, upper=1.5)
+        image = tf.image.random_hue(image, max_delta=0.2)
+        image = tf.image.random_brightness(image, max_delta=32. / 255.)
+        image = tf.image.random_saturation(image, lower=0.5, upper=1.5)
+        return image
+
+    def aug_4(image):
+        image = tf.image.random_hue(image, max_delta=0.2)
+        image = tf.image.random_saturation(image, lower=0.5, upper=1.5)
+        image = tf.image.random_contrast(image, lower=0.5, upper=1.5)
+        image = tf.image.random_brightness(image, max_delta=32. / 255.)
+        return image
+
     def _parse_function(filename, label):
         image_string = tf.read_file(filename)
-        image_decoded = tf.image.decode_jpeg(image_string)
-        image_resized = tf.image.resize_images(image_decoded, [512, 512])
-        return image_resized, label
+        image_decoded = tf.image.decode_jpeg(image_string, channels=3)
+        image_resized = tf.image.resize_images(image_decoded, [resize, resize])
+
+        image_flipped = tf.image.random_flip_left_right(image_resized)
+
+        angle = tf.reshape(tf.random_uniform([1], -math.pi/12, math.pi/12, tf.float32), [])
+        image_rotated = tf.contrib.image.rotate(image_flipped, angle, interpolation='BILINEAR')
+
+
+        image_cropped = tf.random_crop(image_rotated, [crop_size, crop_size, 3])
+
+        p1 = partial(aug_1, image_cropped)
+        p2 = partial(aug_2, image_cropped)
+        p3 = partial(aug_3, image_cropped)
+        p4 = partial(aug_4, image_cropped)
+
+        k = tf.reshape(tf.random_uniform([1], 0, 4, tf.int32), [])
+        image = tf.case([(tf.equal(k, 0), p1),
+                         (tf.equal(k, 1), p2),
+                         (tf.equal(k, 2), p3),
+                         (tf.equal(k, 3), p4)],
+                        default=p1,
+                        exclusive=True)
+
+        return image, label
 
     filenames, labels = read_labeled_image_list(dataset_text_file, balance_count)
     filenames = tf.constant(filenames, name='filename_list')
@@ -58,6 +115,8 @@ def get_tf_dataset(dataset_text_file, balance_count=500, parallel_calls=20):
 
     dataset = tf.data.Dataset.from_tensor_slices((filenames, labels))
     dataset = dataset.map(_parse_function, num_parallel_calls=parallel_calls)
+    #dataset = dataset.cache()
+    dataset = dataset.prefetch(10000)
 
     return dataset
 
