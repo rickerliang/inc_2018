@@ -49,10 +49,11 @@ def read_labeled_image_list(dataset_text_file, balance_count):
         key = [key] * len(dict[key])
         labels += key
 
-    return filenames, labels
+    return filenames, labels, len(dict.keys())
 
 
-def get_tf_dataset(dataset_text_file, balance_count=500, parallel_calls=20, resize=512, crop_size=384):
+def get_tf_dataset(dataset_text_file, balance_count=500, parallel_calls=20,
+                   batch_size=64, resize=512, crop_size=384):
     def aug_1(image):
         image = tf.image.random_brightness(image, max_delta=32. / 255.)
         image = tf.image.random_saturation(image, lower=0.5, upper=1.5)
@@ -91,7 +92,6 @@ def get_tf_dataset(dataset_text_file, balance_count=500, parallel_calls=20, resi
         angle = tf.reshape(tf.random_uniform([1], -math.pi/12, math.pi/12, tf.float32), [])
         image_rotated = tf.contrib.image.rotate(image_flipped, angle, interpolation='BILINEAR')
 
-
         image_cropped = tf.random_crop(image_rotated, [crop_size, crop_size, 3])
 
         p1 = partial(aug_1, image_cropped)
@@ -109,16 +109,23 @@ def get_tf_dataset(dataset_text_file, balance_count=500, parallel_calls=20, resi
 
         return image, label
 
-    filenames, labels = read_labeled_image_list(dataset_text_file, balance_count)
+    filenames, labels, number_classes = read_labeled_image_list(dataset_text_file, balance_count)
+    number_examples = len(filenames)
     filenames = tf.constant(filenames, name='filename_list')
     labels = tf.constant(labels, name='label_list')
 
     dataset = tf.data.Dataset.from_tensor_slices((filenames, labels))
+    dataset = dataset.shuffle(20000)
+
+    #dataset = dataset.apply(tf.contrib.data.map_and_batch(
+    #    map_func=_parse_function, batch_size=batch_size, num_parallel_batchs=parallel_calls))
+
     dataset = dataset.map(_parse_function, num_parallel_calls=parallel_calls)
     #dataset = dataset.cache()
-    dataset = dataset.prefetch(10000)
+    dataset = dataset.batch(batch_size=batch_size)
+    dataset = dataset.prefetch(256)
 
-    return dataset
+    return dataset, number_classes, number_examples
 
 
 def collect_all_files(folder, label):
@@ -240,12 +247,12 @@ def gen_dataset_file(raw_data_root_dir, depth):
     file_label_list, label_dir_dict = collect_file_path_and_label(raw_data_root_dir, depth)
     raw_data_root_dir = raw_data_root_dir.replace('/', '_')
 
-    with open('{0}_dataset_file_{1}.txt'.format(raw_data_root_dir, depth), 'w') as f:
+    with open('{0}_{1}_dataset.txt'.format(raw_data_root_dir, depth), 'w') as f:
         for file, label in file_label_list:
             f.write('{0}\t{1}\n'.format(file, label))
 
     total_file = 0
-    with open('{0}_dict_file_{1}.txt'.format(raw_data_root_dir, depth), 'w') as f:
+    with open('{0}_{1}_dict.txt'.format(raw_data_root_dir, depth), 'w') as f:
         for key, item in label_dir_dict.iteritems():
             f.write('{0}\t{1}\t{2}\n'.format(key, item[0], item[1]))
             total_file += item[1]

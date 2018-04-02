@@ -36,17 +36,16 @@ class DataProviderTestCase(unittest.TestCase):
     #     self.assertEqual(len(label_dict), 4)
 
     def test_read_labeled_image_list(self):
-        dataset = get_tf_dataset(
-            "_home_lyk_machine_learning_Supervised_Learning_iNaturalist_image_val__dataset_file_7.txt",
-            balance_count=0, parallel_calls=40)
+        batch_size = 64
+        dataset, number_class = get_tf_dataset(
+            "_home_lyk_machine_learning_Supervised_Learning_iNaturalist_image_val__7_dataset.txt",
+            balance_count=0, parallel_calls=40, batch_size=batch_size)
 
         #dataset.repeat()
         #dataset.shard(2, 0)
-        dataset.shuffle(10000)
 
-        batch_size = 1024
-        batched_dataset = dataset.batch(512)
-        iterator = batched_dataset.make_one_shot_iterator()
+
+        iterator = dataset.make_one_shot_iterator()
         next_element = iterator.get_next()
 
         session_config = tf.ConfigProto()

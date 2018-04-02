@@ -103,3 +103,5 @@ ENV/
 raw_data
 *.txt
 *.xml
+model_best_weight
+model_weight_*
