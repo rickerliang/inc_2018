@@ -14,6 +14,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.python import debug as tf_debug
 from tensorflow.python.ops import gen_logging_ops
+from tensorflow.python.framework import ops as _ops
 import horovod.tensorflow as hvd
 
 from model.model_class import InceptionResnetV2, Resnet50V2, Cnn8CreluLsoftmax
@@ -27,19 +28,22 @@ class Supervisor:
 
         print("horovod stuff...")
         self.number_replica, self.rank = self.horovod_stuff(self.args)
-        self.batch_size_per_replica = int(math.ceil(self.args.batch_size / self.number_replica))
 
         print("build input pipeline...")
         train_dataset_filename = "_home_lyk_machine_learning_Supervised_Learning_iNaturalist_image_val__7_dataset.txt"
+
         self.image_size = 384
-        dataset, self.number_class, self.number_examples = get_tf_dataset(
+        dataset, self.number_class, number_examples = get_tf_dataset(
             train_dataset_filename,
             balance_count=20,
-            parallel_calls=40,
-            batch_size=self.args.batch_size,
-            crop_size=self.image_size)
+            parallel_calls=64,
+            batch_size=self.args.batch_size_per_replica,
+            crop_size=self.image_size,
+            prefetch_count=self.args.batch_size_per_replica * 2,
+            num_shards=self.number_replica,
+            index=self.rank)
         dataset = dataset.repeat()
-        dataset = dataset.shard(self.number_replica, self.rank)
+        self.number_examples = int(number_examples / self.number_replica)
         iterator = dataset.make_one_shot_iterator()
         self.train_images, self.train_labels = iterator.get_next()
 
@@ -90,24 +94,25 @@ class Supervisor:
         tf.summary.scalar('batch_accuracy', self.accuracy_op)
 
         self.session_config = tf.ConfigProto()
-        self.session_config.gpu_options.allow_growth = True
+        #self.session_config.gpu_options.allow_growth = True
         if self.args.use_horovod:
             self.session_config.gpu_options.visible_device_list = str(
                 hvd.local_rank())
 
     def image_summary(self):
         for i in range(8):
-            gen_logging_ops._image_summary(tf.as_string(self.train_labels[i]),
+            log_image = gen_logging_ops._image_summary(tf.as_string(self.train_labels[i]),
                                        tf.expand_dims(self.train_images[i], 0),
                                        max_images=1)
+            _ops.add_to_collection(_ops.GraphKeys.SUMMARIES, log_image)
 
     def parse_argument(self):
         parser = argparse.ArgumentParser()
-        parser.add_argument("--batch_size", help="", default=32, type=int)
+        parser.add_argument("--batch_size_per_replica", help="", default=64, type=int)
         parser.add_argument("--num_epoch", help="", default=999, type=int)
         parser.add_argument("--early_stopping_step", help="", default=100, type=int)
         parser.add_argument("--lambda_decay_init", help="", default=1000.0, type=float)
-        parser.add_argument("--lambda_decay_steps", help="", default=2000, type=int)
+        parser.add_argument("--lambda_decay_steps", help="", default=4000, type=int)
         parser.add_argument("--lambda_decay_rate", help="", default=0.8, type=float)
         parser.add_argument("--lambda_decay_min", help="", default=9.0, type=float)
         parser.add_argument("--tfdbg", help="", default=False, type=bool)
@@ -121,10 +126,10 @@ class Supervisor:
         number_replica = 1
         rank = 0
         if args.use_horovod:
-            print("use horovod")
             hvd.init()
             number_replica = hvd.size()
             rank = hvd.rank()
+            print("use horovod, number replica:{0}, rank:{1}".format(number_replica, rank))
         else:
             print("do not use horovod")
 
@@ -212,7 +217,7 @@ class Supervisor:
     def training_phase(self, epoch, merge_summary, session, summary_writer):
         accuracy_avg = 0.0
         loss_avg = 0.0
-        for j in range(int(math.ceil((self.number_examples / self.number_replica) / self.batch_size_per_replica))):
+        for j in range(int(math.ceil(self.number_examples / self.args.batch_size_per_replica))):
             images, labels = session.run([self.train_images, self.train_labels])
             if j == 0:
                 step, summary, loss_value, accuracy_value, _ = session.run(

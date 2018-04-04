@@ -53,7 +53,8 @@ def read_labeled_image_list(dataset_text_file, balance_count):
 
 
 def get_tf_dataset(dataset_text_file, balance_count=500, parallel_calls=20,
-                   batch_size=64, resize=512, crop_size=384):
+                   batch_size=64, resize=512, crop_size=384, prefetch_count=224,
+                   num_shards=1, index=0):
     def aug_1(image):
         image = tf.image.random_brightness(image, max_delta=32. / 255.)
         image = tf.image.random_saturation(image, lower=0.5, upper=1.5)
@@ -115,6 +116,7 @@ def get_tf_dataset(dataset_text_file, balance_count=500, parallel_calls=20,
     labels = tf.constant(labels, name='label_list')
 
     dataset = tf.data.Dataset.from_tensor_slices((filenames, labels))
+    dataset = dataset.shard(num_shards, index)
     dataset = dataset.shuffle(20000)
 
     #dataset = dataset.apply(tf.contrib.data.map_and_batch(
@@ -123,7 +125,7 @@ def get_tf_dataset(dataset_text_file, balance_count=500, parallel_calls=20,
     dataset = dataset.map(_parse_function, num_parallel_calls=parallel_calls)
     #dataset = dataset.cache()
     dataset = dataset.batch(batch_size=batch_size)
-    dataset = dataset.prefetch(256)
+    dataset = dataset.prefetch(prefetch_count)
 
     return dataset, number_classes, number_examples
 

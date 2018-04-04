@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+mpirun -np 2 -hostfile hostfile -bind-to none -map-by slot -x NCCL_DEBUG=INFO python /home/lyk/machine_learning/Supervised_Learning/iNaturalist_2018_Competition/train.py --use_horovod=true

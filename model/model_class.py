@@ -60,9 +60,6 @@ class ModelBase():
                 1.0 / 255) * 2.0 - 1.0  # [-1, +1] float32
         return image
 
-    def get_input_shape(self):
-        return (256, 256, 3)
-
     def build_model(self, image_batch, target, num_class, lambda_decay,
                     training):
         raise NotImplementedError()
@@ -129,7 +126,7 @@ class Cnn8CreluLsoftmax2(ModelBase):
 
     def build_model(self, image_batch, target, num_class, lambda_decay,
                     training):
-        scope_name = "plant_seedings_cnn_8_crelu_classifier_with_lsoftmax"
+        scope_name = "cnn_8_crelu_classifier_with_lsoftmax"
 
         with tf.variable_scope(scope_name):
             flatten = model.bn_cnn.build_bn_cnn_8_crelu_2(image_batch, training)
@@ -151,7 +148,7 @@ class Cnn8Lsoftmax(ModelBase):
 
     def build_model(self, image_batch, target, num_class, lambda_decay,
                     training):
-        scope_name = "plant_seedings_cnn_8_classifier_with_lsoftmax"
+        scope_name = "cnn_8_classifier_with_lsoftmax"
 
         with tf.variable_scope(scope_name):
             flatten = model.bn_cnn.build_bn_cnn_8(image_batch, training)
@@ -173,7 +170,7 @@ class Cnn8CreluLsoftmax(ModelBase):
 
     def build_model(self, image_batch, target, num_class, lambda_decay,
                     training):
-        scope_name = "plant_seedings_cnn_8_crelu_classifier_with_lsoftmax"
+        scope_name = "cnn_8_crelu_classifier_with_lsoftmax"
 
         with tf.variable_scope(scope_name):
             flatten = model.bn_cnn.build_bn_cnn_8_crelu(image_batch, training)
@@ -195,7 +192,7 @@ class Cnn8CreluAAMLoss(ModelBase):
 
     def build_model(self, image_batch, target, num_class, lambda_decay,
                     training):
-        scope_name = "plant_seedings_cnn_8_crelu_classifier_with_aamloss"
+        scope_name = "cnn_8_crelu_classifier_with_aamloss"
 
         with tf.variable_scope(scope_name):
             flatten = model.bn_cnn.build_bn_cnn_8_crelu(image_batch, training)
@@ -213,9 +210,6 @@ class Resnet50V2(ModelBase):
         ModelBase.__init__(self, use_horovod)
         return
 
-    def get_input_shape(self):
-        return (224, 224, 3)
-
     def build_model(self, image_batch, target, num_class, lambda_decay,
                     training):
         with slim.arg_scope(
@@ -224,7 +218,7 @@ class Resnet50V2(ModelBase):
                 image_batch, 1001, is_training=training)
             flatten = tf.layers.flatten(end_points['global_pool'])
 
-        scope_name = "plant_seedings_build_resnet_v2_50_with_lsoftmax"
+        scope_name = "resnet_v2_50_with_lsoftmax"
         with tf.variable_scope(scope_name):
             linear = model.l_softmax.l_softmax(flatten, target, num_class, 4,
                                                lambda_decay, training,
@@ -244,9 +238,6 @@ class InceptionResnetV2(ModelBase):
         ModelBase.__init__(self, use_horovod)
         return
 
-    def get_input_shape(self):
-        return (299, 299, 3)
-
     def build_model(self, image_batch, target, num_class, lambda_decay,
                     training):
         with slim.arg_scope(
@@ -256,7 +247,7 @@ class InceptionResnetV2(ModelBase):
                 image_batch, 1001, training)
             flatten = tf.layers.flatten(end_points['global_pool'])
 
-        scope_name = "plant_seedings_build_inception_resnet_v2_with_lsoftmax"
+        scope_name = "inception_resnet_v2_with_lsoftmax"
         with tf.variable_scope(scope_name):
             linear = model.l_softmax.l_softmax(flatten, target, num_class, 4,
                                                lambda_decay, training,
