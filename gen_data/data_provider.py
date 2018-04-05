@@ -53,7 +53,7 @@ def read_labeled_image_list(dataset_text_file, balance_count):
 
 
 def get_tf_dataset(dataset_text_file, balance_count=500, parallel_calls=20,
-                   batch_size=64, resize=512, crop_size=384, prefetch_count=224,
+                   batch_size=64, crop_size=384, prefetch_count=224,
                    num_shards=1, index=0):
     def aug_1(image):
         image = tf.image.random_brightness(image, max_delta=32. / 255.)
@@ -86,9 +86,8 @@ def get_tf_dataset(dataset_text_file, balance_count=500, parallel_calls=20,
     def _parse_function(filename, label):
         image_string = tf.read_file(filename)
         image_decoded = tf.image.decode_jpeg(image_string, channels=3)
-        image_resized = tf.image.resize_images(image_decoded, [resize, resize])
 
-        image_flipped = tf.image.random_flip_left_right(image_resized)
+        image_flipped = tf.image.random_flip_left_right(image_decoded)
 
         angle = tf.reshape(tf.random_uniform([1], -math.pi/12, math.pi/12, tf.float32), [])
         image_rotated = tf.contrib.image.rotate(image_flipped, angle, interpolation='BILINEAR')

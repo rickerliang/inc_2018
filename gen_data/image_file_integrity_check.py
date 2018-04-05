@@ -23,7 +23,8 @@ def verify(filename_list):
         except Exception as e:
             print(filename, str(e))
 
-train_filenames, labels = read_labeled_image_list("_home_lyk_machine_learning_Supervised_Learning_iNaturalist_image_train__dataset_file_7.txt", 0)
-verify(train_filenames)
-val_filenames, labels = read_labeled_image_list("_home_lyk_machine_learning_Supervised_Learning_iNaturalist_image_val__dataset_file_7.txt", 0)
-verify(val_filenames)
+if __name__ == "__main__":
+    train_filenames, _, _ = read_labeled_image_list("_home_lyk_machine_learning_Supervised_Learning_iNaturalist_image_train__dataset_file_7.txt", 0)
+    verify(train_filenames)
+    val_filenames, _, _ = read_labeled_image_list("_home_lyk_machine_learning_Supervised_Learning_iNaturalist_image_val__dataset_file_7.txt", 0)
+    verify(val_filenames)
