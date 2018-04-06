@@ -20,6 +20,7 @@ import model.l_softmax
 import model.resnet_v2
 import model.inception_resnet_v2
 import model.additive_angular_margin
+from model.mobilenet import mobilenet_v2
 
 slim = tf.contrib.slim
 
@@ -110,9 +111,14 @@ class ModelBase():
         return
 
     def load_pretrained_scope_weight(self, file_name, include_scope,
-                                     exclude_scope, session):
+                                     exclude_scope, session, ema=False):
         variables_to_restore = tf.contrib.framework.get_variables_to_restore(
             include=include_scope, exclude=exclude_scope)
+
+        if ema:
+            ema = tf.train.ExponentialMovingAverage(0.999)
+            variables_to_restore = ema.variables_to_restore(variables_to_restore)
+
         init_fn = tf.contrib.framework.assign_from_checkpoint_fn(
             file_name, variables_to_restore, ignore_missing_vars=True)
         init_fn(session)
@@ -260,3 +266,44 @@ class InceptionResnetV2(ModelBase):
         self.load_pretrained_scope_weight(
             'pretrained_model/inception_resnet_v2_2016_08_30.ckpt',
             ["InceptionResnetV2"], None, session)
+
+
+class MobileNetV2(ModelBase):
+    def __init__(self, use_horovod):
+        ModelBase.__init__(self, use_horovod)
+        print("MobileNetV2")
+        return
+
+    def build_model(self, image_batch, target, num_class, lambda_decay,
+                    training):
+        with slim.arg_scope(
+                mobilenet_v2.training_scope(is_training=training, bn_decay=0.9)):
+            net, _ = mobilenet_v2.mobilenet(
+                input_tensor=image_batch, is_training=training, base_only=True)
+
+        scope_name = "mobilenet_v2_with_lsoftmax"
+        with tf.variable_scope(scope_name):
+            to_next_layer = model.bn_cnn.build_cnn_bn_pool_layer(
+                net, training, 1, num_filter=512)[0]
+
+            to_next_layer = model.bn_cnn.build_cnn_bn_pool_layer(
+                to_next_layer, training, 2, num_filter=512)[0]
+
+            to_next_layer = model.bn_cnn.build_cnn_bn_pool_layer(
+                to_next_layer, training, 3, num_filter=1024, kernel_size=3,
+                conv_padding="valid", swap_pooling_pos=False)[1]
+
+            flatten = tf.layers.flatten(to_next_layer)
+
+            linear = model.l_softmax.l_softmax(flatten, target, num_class, 4,
+                                               lambda_decay, training,
+                                               'l_softmax')
+
+            logits = tf.nn.softmax(linear, name='softmax')
+        return linear, logits, tf.trainable_variables(scope_name)
+
+    def load_pretrained_weight(self, session):
+        print("load_pretrained_weight")
+        self.load_pretrained_scope_weight(
+            'pretrained_model/mobilenet_v2/mobilenet_v2_1.0_224.ckpt',
+            ["MobilenetV2"], None, session, ema=True)

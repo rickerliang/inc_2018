@@ -17,7 +17,7 @@ from tensorflow.python.ops import gen_logging_ops
 from tensorflow.python.framework import ops as _ops
 import horovod.tensorflow as hvd
 
-from model.model_class import InceptionResnetV2, Resnet50V2, Cnn8CreluLsoftmax
+from model.model_class import InceptionResnetV2, Resnet50V2, Cnn8CreluLsoftmax, MobileNetV2
 from gen_data.data_provider import get_tf_dataset
 
 
@@ -75,7 +75,7 @@ class Supervisor:
         tf.summary.scalar("lambda_decay", lambda_decay)
 
         print("build model...")
-        self.model = Cnn8CreluLsoftmax(self.args.use_horovod)
+        self.model = MobileNetV2(self.args.use_horovod)
         self.train_images = self.model.preprocessing(self.train_images)
         linear, logits, trainable_var = self.model.build_model(self.x, self.y,
                                                           self.number_class,
@@ -96,7 +96,7 @@ class Supervisor:
         tf.summary.scalar('batch_accuracy', self.accuracy_op)
 
         self.session_config = tf.ConfigProto()
-        #self.session_config.gpu_options.allow_growth = True
+        self.session_config.gpu_options.allow_growth = True
         if self.args.use_horovod:
             self.session_config.gpu_options.visible_device_list = str(
                 hvd.local_rank())
@@ -110,7 +110,7 @@ class Supervisor:
 
     def parse_argument(self):
         parser = argparse.ArgumentParser()
-        parser.add_argument("--batch_size_per_replica", help="", default=64, type=int)
+        parser.add_argument("--batch_size_per_replica", help="", default=128, type=int)
         parser.add_argument("--num_epoch", help="", default=999, type=int)
         parser.add_argument("--early_stopping_step", help="", default=100, type=int)
         parser.add_argument("--lambda_decay_init", help="", default=1000.0, type=float)

@@ -493,7 +493,9 @@ def build_cnn_bn_pool_layer(image_batch,
                             pool_size=2,
                             pool_strides=2,
                             swap_pooling_pos=True,
-                            activation_fn=tf.nn.leaky_relu):
+                            activation_fn=tf.nn.leaky_relu,
+                            conv_padding="same",
+                            pool_padding="same"):
     """
     cnn -> bn -> max_pooling -> leaky_relu
     note:
@@ -521,7 +523,7 @@ def build_cnn_bn_pool_layer(image_batch,
         filters=num_filter,
         kernel_size=kernel_size,
         strides=strides,
-        padding='same',
+        padding=conv_padding,
         use_bias=False,
         name=conv_name)
 
@@ -533,7 +535,7 @@ def build_cnn_bn_pool_layer(image_batch,
             inputs=bn_out,
             pool_size=pool_size,
             strides=pool_strides,
-            padding='same',
+            padding=pool_padding,
             name=pool_name)
 
         activation_out = activation_fn(pooling_out, name=activation_name)
@@ -546,7 +548,7 @@ def build_cnn_bn_pool_layer(image_batch,
             inputs=activation_out,
             pool_size=pool_size,
             strides=pool_strides,
-            padding='same',
+            padding=pool_padding,
             name=pool_name)
 
         return pooling_out, activation_out, bn_out, cnn_out
