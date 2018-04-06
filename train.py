@@ -20,6 +20,7 @@ import horovod.tensorflow as hvd
 from model.model_class import InceptionResnetV2, Resnet50V2, Cnn8CreluLsoftmax
 from gen_data.data_provider import get_tf_dataset
 
+
 class Supervisor:
 
     def __init__(self):
@@ -54,7 +55,8 @@ class Supervisor:
         self.y = tf.placeholder(tf.int64, shape=(None), name='y')
         self.is_training = tf.placeholder(tf.bool, name='phase')
 
-        self.image_summary()
+        if self.args.tfdbg:
+            self.image_summary()
 
         self.global_step = tf.train.create_global_step()
 
