@@ -105,3 +105,5 @@ raw_data
 *.xml
 model_best_weight
 model_weight_*
+pretrained_model/*
+
