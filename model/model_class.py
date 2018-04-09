@@ -278,8 +278,8 @@ class MobileNetV2(ModelBase):
                     training):
         with slim.arg_scope(
                 mobilenet_v2.training_scope(is_training=training, bn_decay=0.9)):
-            net, _ = mobilenet_v2.mobilenet(
-                input_tensor=image_batch, is_training=training, base_only=True)
+            net, end_points = mobilenet_v2.mobilenet(
+                input_tensor=image_batch, num_classes=0, is_training=training, base_only=True)
 
         scope_name = "mobilenet_v2_with_lsoftmax"
         with tf.variable_scope(scope_name):
@@ -300,7 +300,7 @@ class MobileNetV2(ModelBase):
                                                'l_softmax')
 
             logits = tf.nn.softmax(linear, name='softmax')
-        return linear, logits, tf.trainable_variables(scope_name)
+        return linear, logits, None
 
     def load_pretrained_weight(self, session):
         print("load_pretrained_weight")

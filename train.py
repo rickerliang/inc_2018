@@ -21,11 +21,29 @@ from model.model_class import InceptionResnetV2, Resnet50V2, Cnn8CreluLsoftmax, 
 from gen_data.data_provider import get_tf_dataset
 
 
+def parse_argument():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--batch_size_per_replica", help="", default=80,
+                        type=int)
+    parser.add_argument("--num_epoch", help="", default=999, type=int)
+    parser.add_argument("--early_stopping_step", help="", default=1, type=int)
+    parser.add_argument("--lambda_decay_init", help="", default=1000.0,
+                        type=float)
+    parser.add_argument("--lambda_decay_steps", help="", default=4000, type=int)
+    parser.add_argument("--lambda_decay_rate", help="", default=0.8, type=float)
+    parser.add_argument("--lambda_decay_min", help="", default=9.0, type=float)
+    parser.add_argument("--tfdbg", help="", default=False, type=bool)
+    parser.add_argument("--use_horovod", default=False, type=bool)
+    args = parser.parse_args()
+    print(args)
+    return args
+
+
 class Supervisor:
 
     def __init__(self):
         print("parse argument...")
-        self.args = self.parse_argument()
+        self.args = parse_argument()
 
         print("horovod stuff...")
         self.number_replica, self.rank = self.horovod_stuff(self.args)
@@ -47,6 +65,19 @@ class Supervisor:
         self.number_examples = int(number_examples / self.number_replica)
         iterator = dataset.make_one_shot_iterator()
         self.train_images, self.train_labels = iterator.get_next()
+
+        val_dataset_filename = "_home_lyk_machine_learning_Supervised_Learning_iNaturalist_image_val__7_dataset.txt"
+        val_dataset, _, self.val_number_examples = get_tf_dataset(
+            val_dataset_filename,
+            balance_count=0,
+            parallel_calls=64,
+            batch_size=self.args.batch_size_per_replica,
+            crop_size=self.image_size,
+            validation=True
+        )
+        val_dataset = val_dataset.repeat()
+        val_iterator = val_dataset.make_one_shot_iterator()
+        self.val_images, self.val_labels = val_iterator.get_next()
 
         self.x = tf.placeholder(
             tf.float32,
@@ -75,8 +106,9 @@ class Supervisor:
         tf.summary.scalar("lambda_decay", lambda_decay)
 
         print("build model...")
-        self.model = MobileNetV2(self.args.use_horovod)
+        self.model = Cnn8CreluLsoftmax(self.args.use_horovod)
         self.train_images = self.model.preprocessing(self.train_images)
+        self.val_images = self.model.preprocessing(self.val_images)
         linear, logits, trainable_var = self.model.build_model(self.x, self.y,
                                                           self.number_class,
                                                           lambda_decay,
@@ -107,22 +139,6 @@ class Supervisor:
                                        tf.expand_dims(self.train_images[i], 0),
                                        max_images=1)
             _ops.add_to_collection(_ops.GraphKeys.SUMMARIES, log_image)
-
-    def parse_argument(self):
-        parser = argparse.ArgumentParser()
-        parser.add_argument("--batch_size_per_replica", help="", default=128, type=int)
-        parser.add_argument("--num_epoch", help="", default=999, type=int)
-        parser.add_argument("--early_stopping_step", help="", default=100, type=int)
-        parser.add_argument("--lambda_decay_init", help="", default=1000.0, type=float)
-        parser.add_argument("--lambda_decay_steps", help="", default=4000, type=int)
-        parser.add_argument("--lambda_decay_rate", help="", default=0.8, type=float)
-        parser.add_argument("--lambda_decay_min", help="", default=9.0, type=float)
-        parser.add_argument("--tfdbg", help="", default=False, type=bool)
-        parser.add_argument("--use_horovod", default=False, type=bool)
-        args = parser.parse_args()
-        print(args)
-        return args
-
 
     def horovod_stuff(self, args):
         number_replica = 1
@@ -157,7 +173,7 @@ class Supervisor:
 
     def training_process(self, session):
 
-        best_test_accuracy = 0
+        best_validation_accuracy = 0
 
         merge_summary = tf.summary.merge_all()
 
@@ -172,11 +188,6 @@ class Supervisor:
             os.makedirs(best_model_save_path)
         best_model_saver = tf.train.Saver(max_to_keep=10)
 
-        # test_data = data_provider.tfrecord_file_to_nparray(
-        #     './gen_dataset/plant.config.test.tfrecord',
-        #     model.get_input_shape()[0:2],
-        #     preprocessing=model.get_preprocessing())
-
         early_stop_step = 0
         for i in range(self.args.num_epoch):
             loss_avg = self.training_phase(i, merge_summary, session,
@@ -189,31 +200,27 @@ class Supervisor:
                     "inat_2018_{0:.8f}.ckpt".format(loss_avg)),
                 global_step=self.global_step)
 
-            # if hvd.rank() == 0:
-            #     best_acc_updated, best_test_accuracy = test_phase(
-            #         accuracy_op, best_test_accuracy, is_training, session,
-            #         test_data, x, y, confusion_matrix_op,
-            #         test_augmented_accuracy_op, test_augmented_confusion_matrix_op,
-            #         x_test, x_augmented)
-            #
-            #     if best_acc_updated:
-            #         early_stop_step = 0
-            #         print(
-            #             '========================= save best model ======================='
-            #         )
-            #         best_model_saver.save(
-            #             session,
-            #             os.path.join(
-            #                 best_model_save_path,
-            #                 "plant_seedings_classifier_{0:.4f}_{1:.8f}.ckpt".format(
-            #                     best_test_accuracy, loss_avg)),
-            #             global_step=global_step)
-            #     else:
-            #         early_stop_step += 1
-            #
-            #     if early_stop_step >= args.early_stopping_step:
-            #         print("early stop...")
-            #         return
+            if (self.args.use_horovod and self.rank == 0) or self.args.use_horovod is False:
+                validation_acc = self.validation_phase(session)
+                if validation_acc > best_validation_accuracy:
+                    best_validation_accuracy = validation_acc
+                    early_stop_step = 0
+                    print(
+                        '========================= save best model ======================='
+                    )
+                    best_model_saver.save(
+                        session,
+                        os.path.join(
+                            best_model_save_path,
+                            "inat_2018_classifier_{0:.4f}_{1:.8f}.ckpt".format(
+                                best_validation_accuracy, loss_avg)),
+                        global_step=self.global_step)
+                else:
+                    early_stop_step += 1
+
+                if early_stop_step >= self.args.early_stopping_step:
+                    print("early stop...")
+                    return
 
 
     def training_phase(self, epoch, merge_summary, session, summary_writer):
@@ -230,15 +237,12 @@ class Supervisor:
                                self.is_training: True})
                 summary_writer.add_summary(summary, step)
             else:
-                # loss_value, accuracy_value, confusion, _ = session.run(
-                #    [loss, accuracy, confusion_matrix_op, train_op])
                 loss_value, accuracy_value, _ = session.run(
                     [self.loss_op, self.accuracy_op, self.train_op],
                     feed_dict={self.x: images,
                                self.y: labels,
                                self.is_training: True})
 
-            # confusion_matrix = confusion_matrix + confusion
             accuracy_avg = accuracy_avg + (accuracy_value - accuracy_avg) / (j + 1)
             loss_avg = loss_avg + (loss_value - loss_avg) / (j + 1)
             sys.stdout.write("\r{0}--{1} training avg loss:{2} batch loss:{3}    ".
@@ -247,6 +251,26 @@ class Supervisor:
         print("")
         print("training acc:{0}".format(accuracy_avg))
         return loss_avg
+
+    def validation_phase(self, session):
+        accuracy_avg = 0.0
+        loss_avg = 0.0
+        for j in range(int(math.ceil(self.val_number_examples / self.args.batch_size_per_replica))):
+            images, labels = session.run([self.val_images, self.val_labels])
+            loss_value, accuracy_value = session.run(
+                [self.loss_op, self.accuracy_op],
+                feed_dict={self.x: images,
+                           self.y: labels,
+                           self.is_training: False})
+
+            accuracy_avg = accuracy_avg + (accuracy_value - accuracy_avg) / (j + 1)
+            loss_avg = loss_avg + (loss_value - loss_avg) / (j + 1)
+            sys.stdout.write("\r{0} validation avg loss:{1} batch loss:{2}    ".
+                             format(j, loss_avg, loss_value))
+            sys.stdout.flush()
+        print("")
+        print("validation acc:{0}".format(accuracy_avg))
+        return accuracy_avg
 
 
 supervisor = Supervisor()

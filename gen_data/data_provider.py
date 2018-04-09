@@ -54,7 +54,7 @@ def read_labeled_image_list(dataset_text_file, balance_count):
 
 def get_tf_dataset(dataset_text_file, balance_count=500, parallel_calls=20,
                    batch_size=64, crop_size=384, prefetch_count=224,
-                   num_shards=1, index=0):
+                   num_shards=1, index=0, validation=False):
     def aug_1(image):
         image = tf.image.random_brightness(image, max_delta=32. / 255.)
         image = tf.image.random_saturation(image, lower=0.5, upper=1.5)
@@ -87,25 +87,28 @@ def get_tf_dataset(dataset_text_file, balance_count=500, parallel_calls=20,
         image_string = tf.read_file(filename)
         image_decoded = tf.image.decode_jpeg(image_string, channels=3)
 
-        image_flipped = tf.image.random_flip_left_right(image_decoded)
+        if validation:
+            image = tf.image.resize_images(image_decoded, [crop_size, crop_size])
+        else:
+            image_flipped = tf.image.random_flip_left_right(image_decoded)
 
-        angle = tf.reshape(tf.random_uniform([1], -math.pi/12, math.pi/12, tf.float32), [])
-        image_rotated = tf.contrib.image.rotate(image_flipped, angle, interpolation='BILINEAR')
+            angle = tf.reshape(tf.random_uniform([1], -math.pi/12, math.pi/12, tf.float32), [])
+            image_rotated = tf.contrib.image.rotate(image_flipped, angle, interpolation='BILINEAR')
 
-        image_cropped = tf.random_crop(image_rotated, [crop_size, crop_size, 3])
+            image_cropped = tf.random_crop(image_rotated, [crop_size, crop_size, 3])
 
-        p1 = partial(aug_1, image_cropped)
-        p2 = partial(aug_2, image_cropped)
-        p3 = partial(aug_3, image_cropped)
-        p4 = partial(aug_4, image_cropped)
+            p1 = partial(aug_1, image_cropped)
+            p2 = partial(aug_2, image_cropped)
+            p3 = partial(aug_3, image_cropped)
+            p4 = partial(aug_4, image_cropped)
 
-        k = tf.reshape(tf.random_uniform([1], 0, 4, tf.int32), [])
-        image = tf.case([(tf.equal(k, 0), p1),
-                         (tf.equal(k, 1), p2),
-                         (tf.equal(k, 2), p3),
-                         (tf.equal(k, 3), p4)],
-                        default=p1,
-                        exclusive=True)
+            k = tf.reshape(tf.random_uniform([1], 0, 4, tf.int32), [])
+            image = tf.case([(tf.equal(k, 0), p1),
+                             (tf.equal(k, 1), p2),
+                             (tf.equal(k, 2), p3),
+                             (tf.equal(k, 3), p4)],
+                            default=p1,
+                            exclusive=True)
 
         return image, label
 
@@ -121,7 +124,8 @@ def get_tf_dataset(dataset_text_file, balance_count=500, parallel_calls=20,
     #dataset = dataset.apply(tf.contrib.data.map_and_batch(
     #    map_func=_parse_function, batch_size=batch_size, num_parallel_batchs=parallel_calls))
 
-    dataset = dataset.map(_parse_function, num_parallel_calls=parallel_calls)
+    dataset = dataset.map(_parse_function,
+                          num_parallel_calls=parallel_calls)
     #dataset = dataset.cache()
     dataset = dataset.batch(batch_size=batch_size)
     dataset = dataset.prefetch(prefetch_count)
