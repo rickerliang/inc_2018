@@ -106,4 +106,7 @@ raw_data
 model_best_weight
 model_weight_*
 pretrained_model/*
+train_phase*
+validation_phase*
+
 

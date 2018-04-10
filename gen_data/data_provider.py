@@ -58,7 +58,7 @@ def get_tf_dataset(dataset_text_file, balance_count=500, parallel_calls=20,
     def aug_1(image):
         image = tf.image.random_brightness(image, max_delta=32. / 255.)
         image = tf.image.random_saturation(image, lower=0.5, upper=1.5)
-        image = tf.image.random_hue(image, max_delta=0.2)
+        image = tf.image.random_hue(image, max_delta=0.05)
         image = tf.image.random_contrast(image, lower=0.5, upper=1.5)
         return image
 
@@ -66,18 +66,18 @@ def get_tf_dataset(dataset_text_file, balance_count=500, parallel_calls=20,
         image = tf.image.random_saturation(image, lower=0.5, upper=1.5)
         image = tf.image.random_brightness(image, max_delta=32. / 255.)
         image = tf.image.random_contrast(image, lower=0.5, upper=1.5)
-        image = tf.image.random_hue(image, max_delta=0.2)
+        image = tf.image.random_hue(image, max_delta=0.05)
         return image
 
     def aug_3(image):
         image = tf.image.random_contrast(image, lower=0.5, upper=1.5)
-        image = tf.image.random_hue(image, max_delta=0.2)
+        image = tf.image.random_hue(image, max_delta=0.05)
         image = tf.image.random_brightness(image, max_delta=32. / 255.)
         image = tf.image.random_saturation(image, lower=0.5, upper=1.5)
         return image
 
     def aug_4(image):
-        image = tf.image.random_hue(image, max_delta=0.2)
+        image = tf.image.random_hue(image, max_delta=0.05)
         image = tf.image.random_saturation(image, lower=0.5, upper=1.5)
         image = tf.image.random_contrast(image, lower=0.5, upper=1.5)
         image = tf.image.random_brightness(image, max_delta=32. / 255.)

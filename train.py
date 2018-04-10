@@ -8,6 +8,7 @@ from __future__ import print_function
 import math
 import os
 import sys
+import random
 
 import argparse
 import numpy as np
@@ -16,6 +17,7 @@ from tensorflow.python import debug as tf_debug
 from tensorflow.python.ops import gen_logging_ops
 from tensorflow.python.framework import ops as _ops
 import horovod.tensorflow as hvd
+from PIL import Image
 
 from model.model_class import InceptionResnetV2, Resnet50V2, Cnn8CreluLsoftmax, MobileNetV2
 from gen_data.data_provider import get_tf_dataset
@@ -109,7 +111,7 @@ class Supervisor:
         self.model = Cnn8CreluLsoftmax(self.args.use_horovod)
         self.train_images = self.model.preprocessing(self.train_images)
         self.val_images = self.model.preprocessing(self.val_images)
-        linear, logits, trainable_var = self.model.build_model(self.x, self.y,
+        linear, self.logits, trainable_var = self.model.build_model(self.x, self.y,
                                                           self.number_class,
                                                           lambda_decay,
                                                           self.is_training)
@@ -201,7 +203,7 @@ class Supervisor:
                 global_step=self.global_step)
 
             if (self.args.use_horovod and self.rank == 0) or self.args.use_horovod is False:
-                validation_acc = self.validation_phase(session)
+                validation_acc = self.validation_phase(i, session)
                 if validation_acc > best_validation_accuracy:
                     best_validation_accuracy = validation_acc
                     early_stop_step = 0
@@ -229,19 +231,22 @@ class Supervisor:
         for j in range(int(math.ceil(self.number_examples / self.args.batch_size_per_replica))):
             images, labels = session.run([self.train_images, self.train_labels])
             if j == 0:
-                step, summary, loss_value, accuracy_value, _ = session.run(
+                step, summary, loss_value, accuracy_value, logits, _ = session.run(
                     [self.global_step, merge_summary, self.loss_op,
-                     self.accuracy_op, self.train_op],
+                     self.accuracy_op, self.logits, self.train_op],
                     feed_dict={self.x: images,
                                self.y: labels,
                                self.is_training: True})
                 summary_writer.add_summary(summary, step)
             else:
-                loss_value, accuracy_value, _ = session.run(
-                    [self.loss_op, self.accuracy_op, self.train_op],
+                loss_value, accuracy_value, logits, _ = session.run(
+                    [self.loss_op, self.accuracy_op, self.logits, self.train_op],
                     feed_dict={self.x: images,
                                self.y: labels,
                                self.is_training: True})
+
+            self.save_error_sample(images, labels, logits,
+                                   "train_phase_{0}".format(epoch))
 
             accuracy_avg = accuracy_avg + (accuracy_value - accuracy_avg) / (j + 1)
             loss_avg = loss_avg + (loss_value - loss_avg) / (j + 1)
@@ -252,16 +257,18 @@ class Supervisor:
         print("training acc:{0}".format(accuracy_avg))
         return loss_avg
 
-    def validation_phase(self, session):
+    def validation_phase(self, epoch, session):
         accuracy_avg = 0.0
         loss_avg = 0.0
         for j in range(int(math.ceil(self.val_number_examples / self.args.batch_size_per_replica))):
             images, labels = session.run([self.val_images, self.val_labels])
-            loss_value, accuracy_value = session.run(
-                [self.loss_op, self.accuracy_op],
+            loss_value, accuracy_value, logits = session.run(
+                [self.loss_op, self.accuracy_op, self.logits],
                 feed_dict={self.x: images,
                            self.y: labels,
                            self.is_training: False})
+
+            self.save_error_sample(images, labels, logits, "validation_phase_{0}".format(epoch))
 
             accuracy_avg = accuracy_avg + (accuracy_value - accuracy_avg) / (j + 1)
             loss_avg = loss_avg + (loss_value - loss_avg) / (j + 1)
@@ -271,6 +278,44 @@ class Supervisor:
         print("")
         print("validation acc:{0}".format(accuracy_avg))
         return accuracy_avg
+
+    def save_error_sample(self, images, labels, predicts, dir_to_save):
+        """
+
+        :param images:
+        :param labels: index, shape is [batch]
+        :param predicts: shape is [batch, classes]
+        :param dir_to_save:
+        :return:
+        """
+
+        if not os.path.exists("save_error_sample"):
+            return
+
+        print("save error sample...")
+
+        predicts_argmax = np.argmax(predicts, axis=1)
+        predicts_argmax = np.squeeze(predicts_argmax)
+        compare_result = np.equal(labels, predicts_argmax)
+        error_indices = np.nonzero(np.logical_not(compare_result))
+
+        if not os.path.exists(dir_to_save):
+            os.makedirs(dir_to_save)
+
+        if error_indices[0].size == 0:
+            return
+
+        for index in np.nditer(error_indices[0]):
+            image_file_name = "{0}_{1}_{2:.4f}_{3:.3f}.jpg".format(labels[index],
+                                                           predicts_argmax[index],
+                                                           predicts[index][predicts_argmax[index]],
+                                                           random.random())
+
+            image = images[index]
+            image = ((image + 1.0) * 255) / 2.0  # [0, 255] uint8
+            image = image.astype(np.uint8)
+            Image.fromarray(image).save(os.path.join(dir_to_save, image_file_name))
+
 
 
 supervisor = Supervisor()
