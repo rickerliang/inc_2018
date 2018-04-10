@@ -26,7 +26,7 @@ def parse_argument():
     parser.add_argument("--batch_size_per_replica", help="", default=80,
                         type=int)
     parser.add_argument("--num_epoch", help="", default=999, type=int)
-    parser.add_argument("--early_stopping_step", help="", default=1, type=int)
+    parser.add_argument("--early_stopping_step", help="", default=10, type=int)
     parser.add_argument("--lambda_decay_init", help="", default=1000.0,
                         type=float)
     parser.add_argument("--lambda_decay_steps", help="", default=4000, type=int)
