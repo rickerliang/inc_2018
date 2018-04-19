@@ -228,7 +228,7 @@ def collect_file_path_and_label(root_dir, depth):
             category = 8
             categories[2].images = [image_h : image_l]
 
-    case 3: root_dir = level_1_folder_2
+    case 3: root_dir = level_1_folder_1
             depth = 2
             category = 4
             categories[2].image = [image_m]
